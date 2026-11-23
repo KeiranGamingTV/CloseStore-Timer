@@ -2,9 +2,11 @@ package com.keiranhaas.closestoretimer
 
 import android.app.TimePickerDialog
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -38,14 +40,20 @@ import java.time.LocalTime
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    super.onCreate(savedInstanceState)
 
-        requestedOrientation =
-            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    requestedOrientation =
+        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
-        setContent {
-            CloseStoreTimerApp()
-        }
+    /*
+     * Keep the tablet display awake while this app is running.
+     * The screen will not automatically turn off because of the
+     * normal Android screen timeout.
+     */
+    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+    setContent {
+        CloseStoreTimerApp()
     }
 }
 
@@ -246,10 +254,51 @@ private fun CountdownScreen(
 ) {
 
     /*
+     * Number of taps received during the current triple-tap sequence.
+     */
+    var tapCount by remember {
+        mutableStateOf(0)
+    }
+
+    /*
+     * Time of the most recent tap.
+     */
+    var lastTapTime by remember {
+        mutableLongStateOf(0L)
+    }
+
+    /*
+     * Three taps within 700 milliseconds resets the timer.
+     */
+    val tripleTapModifier = Modifier.pointerInput(Unit) {
+
+        detectTapGestures {
+
+            val currentTime = System.currentTimeMillis()
+
+            if (currentTime - lastTapTime > 700L) {
+                tapCount = 1
+            } else {
+                tapCount++
+            }
+
+            lastTapTime = currentTime
+
+            if (tapCount >= 3) {
+                tapCount = 0
+                lastTapTime = 0L
+
+                onReset()
+            }
+        }
+    }
+
+    /*
      * Round upward so that any partial minute still counts as
      * a minute remaining.
      *
      * Example:
+     *
      * 599 seconds -> 10 minutes
      * 540 seconds -> 9 minutes
      * 1 second    -> 1 minute
@@ -262,29 +311,29 @@ private fun CountdownScreen(
     }
 
     Box(
-        modifier = Modifier
+        modifier = tripleTapModifier
             .fillMaxSize()
             .background(Color.White)
             .padding(32.dp),
         contentAlignment = Alignment.Center
     ) {
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
+        if (isClosed) {
 
-            if (isClosed) {
+            Text(
+                text = "WE ARE\nCLOSED",
+                color = Color.Black,
+                fontSize = 64.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
 
-                Text(
-                    text = "STORE CLOSED",
-                    color = Color.Black,
-                    fontSize = 64.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
+        } else {
 
-            } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
 
                 Text(
                     text = "CLOSING IN",
@@ -303,21 +352,9 @@ private fun CountdownScreen(
                     modifier = Modifier.padding(top = 16.dp)
                 )
             }
-
-            OutlinedButton(
-                onClick = onReset,
-                modifier = Modifier.padding(top = 48.dp)
-            ) {
-
-                Text(
-                    text = "RESET",
-                    fontSize = 22.sp
-                )
-            }
         }
     }
 }
-
 private fun formatTime(
     hour: Int,
     minute: Int
