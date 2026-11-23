@@ -1,9 +1,9 @@
 package com.keiranhaas.closestoretimer
 
+import android.app.TimePickerDialog
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,12 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TimeInput
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -42,7 +40,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        enableEdgeToEdge()
+        requestedOrientation =
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         setContent {
             CloseStoreTimerApp()
@@ -50,16 +49,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@androidx.compose.runtime.Composable
+@Composable
 fun CloseStoreTimerApp() {
 
     var selectedHour by remember {
-        mutableStateOf(LocalTime.now().hour)
+        mutableStateOf(20)
     }
 
     var selectedMinute by remember {
-        mutableStateOf(LocalTime.now().minute)
+        mutableStateOf(0)
     }
 
     var isRunning by remember {
@@ -74,13 +72,11 @@ fun CloseStoreTimerApp() {
         mutableLongStateOf(0L)
     }
 
-    /*
-     * Recalculate the countdown once per second.
-     *
-     * The countdown is always based on the actual system clock,
-     * so it cannot drift if Android delays the coroutine.
-     */
-    LaunchedEffect(isRunning, selectedHour, selectedMinute) {
+    LaunchedEffect(
+        isRunning,
+        selectedHour,
+        selectedMinute
+    ) {
 
         if (!isRunning) {
             return@LaunchedEffect
@@ -90,10 +86,8 @@ fun CloseStoreTimerApp() {
 
             val now = LocalDateTime.now()
 
-            var closingDate = LocalDate.now()
-
             var closingDateTime = LocalDateTime.of(
-                closingDate,
+                LocalDate.now(),
                 LocalTime.of(
                     selectedHour,
                     selectedMinute
@@ -101,33 +95,29 @@ fun CloseStoreTimerApp() {
             )
 
             /*
-             * If the selected closing time has already passed today,
-             * assume the store is closing at that time tomorrow.
+             * If today's closing time has already passed,
+             * use tomorrow's closing time.
              */
             if (!closingDateTime.isAfter(now)) {
-                closingDate = closingDate.plusDays(1)
 
-                closingDateTime = LocalDateTime.of(
-                    closingDate,
-                    LocalTime.of(
-                        selectedHour,
-                        selectedMinute
-                    )
-                )
+                closingDateTime = closingDateTime.plusDays(1)
             }
 
-            val secondsRemaining = Duration.between(
+            val seconds = Duration.between(
                 now,
                 closingDateTime
             ).seconds
 
-            remainingSeconds = secondsRemaining
+            if (seconds <= 0) {
 
-            if (secondsRemaining <= 0) {
+                remainingSeconds = 0
                 isClosed = true
                 isRunning = false
+
                 break
             }
+
+            remainingSeconds = seconds
 
             delay(1_000L)
         }
@@ -143,11 +133,9 @@ fun CloseStoreTimerApp() {
             SetupScreen(
                 selectedHour = selectedHour,
                 selectedMinute = selectedMinute,
-                onHourChanged = {
-                    selectedHour = it
-                },
-                onMinuteChanged = {
-                    selectedMinute = it
+                onTimeSelected = { hour, minute ->
+                    selectedHour = hour
+                    selectedMinute = minute
                 },
                 onStart = {
                     isClosed = false
@@ -169,15 +157,20 @@ fun CloseStoreTimerApp() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@androidx.compose.runtime.Composable
+@Composable
 private fun SetupScreen(
     selectedHour: Int,
     selectedMinute: Int,
-    onHourChanged: (Int) -> Unit,
-    onMinuteChanged: (Int) -> Unit,
+    onTimeSelected: (Int, Int) -> Unit,
     onStart: () -> Unit
 ) {
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val formattedTime = formatTime(
+        selectedHour,
+        selectedMinute
+    )
 
     Column(
         modifier = Modifier
@@ -196,28 +189,46 @@ private fun SetupScreen(
             textAlign = TextAlign.Center
         )
 
-        TimeInput(
-            state = androidx.compose.material3.rememberTimePickerState(
-                initialHour = selectedHour,
-                initialMinute = selectedMinute,
-                is24Hour = false
-            ),
-            modifier = Modifier.padding(vertical = 32.dp)
-        )
+        Button(
+            onClick = {
 
-        /*
-         * The TimeInput component maintains its own state, so the
-         * selected time is captured by the button below.
-         *
-         * This section is replaced with the simpler custom picker
-         * below for reliable state handling.
-         */
+                TimePickerDialog(
+                    context,
+                    { _, hour, minute ->
+                        onTimeSelected(hour, minute)
+                    },
+                    selectedHour,
+                    selectedMinute,
+                    false
+                ).show()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    top = 32.dp,
+                    start = 32.dp,
+                    end = 32.dp
+                )
+        ) {
+
+            Text(
+                text = formattedTime,
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
         Button(
             onClick = onStart,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp),
+                .padding(
+                    top = 32.dp,
+                    start = 32.dp,
+                    end = 32.dp
+                )
         ) {
+
             Text(
                 text = "START",
                 fontSize = 28.sp,
@@ -227,13 +238,23 @@ private fun SetupScreen(
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun CountdownScreen(
     remainingSeconds: Long,
     isClosed: Boolean,
     onReset: () -> Unit
 ) {
 
+    /*
+     * Round upward so that any partial minute still counts as
+     * a minute remaining.
+     *
+     * Example:
+     * 599 seconds -> 10 minutes
+     * 540 seconds -> 9 minutes
+     * 1 second    -> 1 minute
+     * 0 seconds   -> 0 minutes
+     */
     val minutesRemaining = if (remainingSeconds > 0) {
         (remainingSeconds + 59) / 60
     } else {
@@ -287,6 +308,7 @@ private fun CountdownScreen(
                 onClick = onReset,
                 modifier = Modifier.padding(top = 48.dp)
             ) {
+
                 Text(
                     text = "RESET",
                     fontSize = 22.sp
@@ -294,4 +316,29 @@ private fun CountdownScreen(
             }
         }
     }
+}
+
+private fun formatTime(
+    hour: Int,
+    minute: Int
+): String {
+
+    val suffix = if (hour >= 12) {
+        "PM"
+    } else {
+        "AM"
+    }
+
+    val displayHour = when {
+        hour == 0 -> 12
+        hour > 12 -> hour - 12
+        else -> hour
+    }
+
+    return String.format(
+        "%d:%02d %s",
+        displayHour,
+        minute,
+        suffix
+    )
 }
